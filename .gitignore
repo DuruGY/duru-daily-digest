@@ -1,0 +1,7 @@
+node_modules/
+*.log
+digest.md
+out*.json
+references/sources.active.json
+references/article-history.json
+references/feed-health.json
