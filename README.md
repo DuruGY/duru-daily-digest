@@ -1,108 +1,96 @@
-# 📰 Tech Daily Digest — OpenClaw Skill
+# duru-daily-digest
 
-From [Andrej Karpathy](https://x.com/karpathy)'s curated 92 top tech blogs, automatically fetch, score, and summarize the best articles into a daily digest.
+本项目 **fork 自** [HarrisHan/ai-daily-digest](https://github.com/HarrisHan/ai-daily-digest)，并在此基础上做了三类关键改造：
+1) 订阅源从“每天全量抓取”改为 **6 天轮巡（15/15/15/15/15/17）**；
+2) 增加 **本地 Ollama 2B 预压缩**，先把文章压成短摘要再交给主模型；
+3) 增加 **strict 硬链路**（rotation → fetch → compress），避免主模型回退到长文本输入。  
+这么改的目的很直接：**降低 token 消耗、减少超时/卡死概率、提高每天定时推送稳定性**。
 
-**No external API keys required.** Uses the OpenClaw agent's own LLM for scoring and summarization — works with Claude, Gemini, GPT, or any model.
+## 项目用途
 
-## Quick Start
+`duru-daily-digest` 用于从技术博客 RSS 源中自动生成每日简报：
+- 抓取最近 24/48/72 小时文章
+- 进行筛选、聚合与摘要
+- 输出适合 Telegram/OpenClaw 的日报内容（Top3 + 更多精选 + 统计）
 
-### Install as OpenClaw Skill
+适合想持续追踪 AI / 工程 / 安全动态，但不想手动刷大量信息源的场景。
 
-```bash
-clawhub install ai-daily-digest
+## 工作流（当前版本）
+
+```text
+Rotating Sources (15 or 17/day)
+  -> fetch-rss.mjs
+  -> compress-with-ollama.mjs (local qwen3.5:2b, strict)
+  -> compact JSON
+  -> main model writes final digest
 ```
 
-Then in any OpenClaw chat:
+## 安装方式（无 ClawHub 版本）
 
-```
-/digest
-```
-
-### Manual Installation
+> 本项目当前未发布到 ClawHub，请使用手动安装。
 
 ```bash
 git clone https://github.com/DuruGY/duru-daily-digest.git
-cp -r duru-daily-digest ~/.openclaw/workspace/skills/ai-daily-digest
+mkdir -p ~/.openclaw/workspace/skills
+cp -r duru-daily-digest ~/.openclaw/workspace/skills/
 ```
 
-## How It Works
+建议目录结构：
 
-```
-92 RSS Feeds → Concurrent Fetch → Time Filter → LLM Scoring → LLM Summary → Digest
-     │              │                  │              │              │           │
-  sources.json   fetch-rss.mjs    by hours arg    agent scores   agent writes  Telegram
-                 (15 parallel)                    relevance/      2-3 sentence  message
-                                                  quality/        summaries
-                                                  timeliness
+```text
+~/.openclaw/workspace/skills/duru-daily-digest
 ```
 
-## Configuration
+## 使用方式
 
-### Time Range
+### 1) 手动运行（测试）
 
-```
-/digest 48h     # Last 48 hours
-/digest 72h     # Last 72 hours
-```
+在 OpenClaw 对话中触发：
 
-### Custom Sources
-
-Edit `references/sources.json` to add/remove RSS feeds:
-
-```json
-[
-  {"name": "your-blog.com", "xmlUrl": "https://your-blog.com/feed.xml", "htmlUrl": "https://your-blog.com"}
-]
+```text
+/digest
 ```
 
-### Scheduled Daily Digest
+### 2) 预处理硬链路（推荐）
 
 ```bash
-openclaw cron add \
-  --name "ai-daily-digest" \
-  --cron "0 9 * * *" \
-  --tz "Asia/Shanghai" \
-  --message "/digest" \
-  --announce --exact
+bash ~/.openclaw/workspace/skills/duru-daily-digest/scripts/run-digest-hard.sh 24 15 Asia/Shanghai qwen3.5:2b 6
 ```
 
-## RSS Sources
+参数含义：
+- `24`：时间窗（小时）
+- `15`：目标精选数
+- `Asia/Shanghai`：时区
+- `qwen3.5:2b`：本地压缩模型
+- `6`：并发压缩 worker 数
 
-92 feeds curated from [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/), including:
+### 3) 定时任务（每天 08:00）
 
-Simon Willison · Paul Graham · Dan Abramov · Gwern · Krebs on Security · Antirez · John Gruber · Troy Hunt · Mitchell Hashimoto · Steve Blank · Eli Bendersky · Fabien Sanglard · and 80 more...
+可在 OpenClaw cron 中配置固定消息，让 agent 先执行硬链路，再只读取 `out.compact.json` 生成日报。
 
-## Project Structure
+## 关键文件
 
-```
-ai-daily-digest/
-├── SKILL.md              # OpenClaw skill definition
-├── README.md             # This file
+```text
+duru-daily-digest/
+├── SKILL.md
+├── README.md
+├── CHANGELOG.md
+├── LICENSE
 ├── scripts/
-│   └── fetch-rss.mjs     # Concurrent RSS fetcher (Node.js, zero deps)
+│   ├── fetch-rss.mjs
+│   ├── select-sources-rotation.mjs
+│   ├── compress-with-ollama.mjs
+│   └── run-digest-hard.sh
 └── references/
-    └── sources.json       # 92 RSS feed sources
+    └── sources.json
 ```
 
-## Fork & License Notice
+## License
 
-This project is forked from [HarrisHan/ai-daily-digest](https://github.com/HarrisHan/ai-daily-digest).
-
-- Upstream license: MIT
-- This fork keeps the MIT license and continues under the same terms.
-- See `LICENSE` for full text.
-
-## What Changed in This Fork
-
-- Added 6-day source rotation: `15/15/15/15/15/17` (`select-sources-rotation.mjs`)
-- Added local Ollama 2B pre-compression stage (`compress-with-ollama.mjs`)
-- Added strict hard pipeline runner (`run-digest-hard.sh`): rotation → fetch → compress(strict)
-- Updated SKILL workflow to prefer compact JSON and reduce main-model token load
-- Updated cron usage to support the hardened pipeline
+MIT（沿用上游许可）
 
 ## Credits
 
-- Upstream project: [HarrisHan/ai-daily-digest](https://github.com/HarrisHan/ai-daily-digest)
+- Upstream: [HarrisHan/ai-daily-digest](https://github.com/HarrisHan/ai-daily-digest)
 - RSS sources from [Hacker News Popularity Contest 2025](https://refactoringenglish.com/tools/hn-popularity/)
-- Inspired by [ai-daily-digest](https://github.com/vigorX777/ai-daily-digest) by vigorX777
-- Built for [OpenClaw](https://github.com/openclaw/openclaw) 🦞
+- Built for OpenClaw
